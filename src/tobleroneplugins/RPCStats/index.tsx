@@ -9,7 +9,8 @@ import { definePluginSettings } from "@api/Settings";
 import { Devs } from "@utils/constants";
 import definePlugin from "@utils/types";
 import { OptionType } from "@utils/types";
-import { ApplicationAssetUtils, FluxDispatcher } from "@webpack/common";
+import { ApplicationAssetUtils, FluxDispatcher, Alerts, Forms } from "@webpack/common";
+import { Margins } from "@utils/margins";
 import { UserStore } from "@webpack/common";
 import { Message } from "discord-types/general";
 import { PluginNative } from "@utils/types";
@@ -40,35 +41,35 @@ const settings = definePluginSettings({
         description: "Display the amount of messages sent today",
         default: true,
         restartNeeded: false,
-        onChange: () => { updateData(); }
+        onChange: () => { validateSelection('messagesSentToday'); updateData(); }
     },
     messagesSentAllTime: {
         type: OptionType.BOOLEAN,
         description: "Display the amount of messages sent all time",
         default: false,
         restartNeeded: false,
-        onChange: () => { updateData(); }
+        onChange: () => { validateSelection('messagesSentAllTime'); updateData(); }
     },
     mostListenedAlbum: {
         type: OptionType.BOOLEAN,
         description: "Display your most listened album for the week",
         default: false,
         restartNeeded: false,
-        onChange: () => { updateData(); }
+        onChange: () => { validateSelection('mostListenedAlbum'); updateData(); }
     },
     notificationsReceived: {
         type: OptionType.BOOLEAN,
         description: "Display notifications received today",
         default: false,
         restartNeeded: false,
-        onChange: () => { updateData(); }
+        onChange: () => { validateSelection('notificationsReceived'); updateData(); }
     },
     hoursOnline: {
         type: OptionType.BOOLEAN,
         description: "Display hours online today",
         default: false,
         restartNeeded: false,
-        onChange: () => { updateData(); }
+        onChange: () => { validateSelection('hoursOnline'); updateData(); }
     },
     lastFMApiKey: {
         type: OptionType.STRING,
@@ -100,6 +101,33 @@ const settings = definePluginSettings({
     }
 });
 
+
+
+function validateSelection(optionChanged: keyof typeof settings.store) {
+    const selectedCount = [
+        settings.store.messagesSentToday,
+        settings.store.messagesSentAllTime,
+        settings.store.mostListenedAlbum,
+        settings.store.notificationsReceived,
+        settings.store.hoursOnline
+    ].filter(Boolean).length;
+
+    if (selectedCount > 2) {
+        settings.store[optionChanged] = false; // Deselect the last selected option
+        Alerts.show({
+            title: "Hold on!",
+            body: <div>
+                <Forms.FormText>Only two stats can be selected at once!</Forms.FormText>
+                <Forms.FormText className={Margins.top8}>
+                    Please deselect some options to proceed.
+                </Forms.FormText>
+            </div>
+        });
+        return false;
+    }
+
+    return true;
+}
 
 
 async function setRpc(disable?: boolean, details?: string, state?: string, imageURL?: string) {
@@ -212,11 +240,13 @@ async function updateData() {
 }
 
 
+
 export default definePlugin({
     name: "RPCStats",
     description: "Displays stats about your activity as an rpc",
     authors: [Devs.Samwich],
     async start() {
+        await DataStore.set("RPCStatsStartTime", Date.now());
         updateData();
 
         setInterval(() => {
@@ -229,8 +259,7 @@ export default definePlugin({
     stop() {
         setRpc(true);
     },
-    flux:
-    {
+    flux: {
         async MESSAGE_CREATE({ optimistic, type, message }: IMessageCreate) {
             if (optimistic || type !== "MESSAGE_CREATE") return;
             if (message.state === "SENDING") return;
@@ -239,6 +268,11 @@ export default definePlugin({
             await DataStore.set("RPCStatsAllTimeMessages", await DataStore.get("RPCStatsAllTimeMessages") + 1);
             updateData();
         },
+        async NOTIFICATION_CREATE() {
+            let notifications = await DataStore.get("RPCStatsNotifications") || 0;
+            await DataStore.set("RPCStatsNotifications", notifications + 1);
+            updateData();
+        }
     }
 });
 
